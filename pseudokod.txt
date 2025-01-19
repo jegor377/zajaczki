@@ -1,0 +1,116 @@
+# Założenia:
+- Wszystkie wiadomości są podbite zegarem Lamporta (timestamp)
+- Procesy mają priorytet zależny od wartości zegaru Lamporta wiadomości (niższy ma wyższy priorytet), a w razie konfliktu wybieramy ten o niższym id procesu.
+- Komunikaty, które nie są przewidziane w danym stanie są ignorowane.
+- Komunikaty odkładają się na kolejkę posortowaną rosnąco według wartości zegara Lamporta.
+
+# Zmienne:
+- Types: Tablica typów procesów (HARE/BEAR/UNDEFINED)
+- Meadows: Tablica stanu polan (true - zajęta, false - wolna). Na początku wszystkie są wolne.
+- CommQueue: Kolejka komunikatów przychodzących posortowana rosnąco zegarem lamporta
+- WaitQueue: Kolejka oczekujących procesów posortowania malejąco priorytetem procesów
+- IsLeader: Proces jest leaderem imprezy na polanie
+
+# Typy:
+- HARE: Proces jest zajączkiem
+- BEAR: Proces jest niedźwiedziem
+- UNDEFINED: Proces jest niezdefiniowany (typ począktowy)
+
+# Stany:
+- THINK: Proces myśli czy chce iść na imprezę
+- INIT: Proces ustala swój typ oraz typ innych
+- IDLE: Proces nie ma zamiaru iść na imprezę
+- WANT: Proces ma zamiar iść na imprezę
+- DECIDE: Proces jest leaderem imprezy, decyduje o tym kto przyjdzie i ile przyniesie alkoholu
+- WAIT: Proces czeka na sygnał rozpoczęcia imprezy
+- PARTY: Proces jest na imprezie
+
+# Możliwe komunikaty:
+- TYPE: informowanie o swoim typie
+- ACK: pozwolenie na zajęcie polany `i`
+- WANT: chęć zajęcia polany `i`
+- COME: informowanie procesu o tym, że może przyjść na imprezę i ile alkoholu ma przynieść
+- START: rozpoczęcie impery
+- OCCUPIED: polana `i` jest zajęta
+- FREE: polana `i` jest wolna
+
+## Stan INIT:
+1. Proces losuje czy będzie zajączkiem czy misiem
+2. Proces wysyła do wszystkich komunikat z informacją o swoim typie
+3. Proces zlicza przysłane komunikaty z informacją o typie procesów aż dostanie od wszystkich procesów
+4. Proces przechodzi do stanu THINK
+
+Możliwe komunikaty wyjściowe:
+- TYPE
+Możliwe komunikaty wejściowe:
+- TYPE
+- WANT: odpowiada ACK
+
+## Stan THINK:
+1. Proces losuje czy jest w stanie IDLE czy WANT
+2. Proces przechodzi do wylosowanego stanu
+
+## Stan IDLE:
+1. Proces czeka przez losową liczbę sekund (1s-10s) i jeśli dostanie komunikat WANT to wysyła ACK
+2. Proces przechodzi do stanu THINK
+
+Możliwe komunikaty wyjściowe:
+- ACK
+Możliwe komunikaty wejściowe:
+- WANT: odpowiada ACK
+
+## Stan WANT:
+1. Proces losuje, na którą polanę chcę pójść z listy tych, o których wie, że są puste (i się na nich mieści).
+2. Proces wysyła do wszystkich informację WANT o tym, na którą polanę chcę pójść.
+3. Czekamy aż od wszystkich otrzymamy komunikat ACK i w tym czasie:
+    1. Odsyłamy komunikat ACK do wszystkich, którzy ubiegają się o inną od naszej polany, która jest wolna.
+    2. Jeśli jesteśmy zajączkiem i ktoś ubiega się o naszą polanę, to jeśli mamy wyższy priorytet to nic mu nie odpowiadamy ale zapisujemy go na kolejkę WaitQueue, a jeśli mamy niższy priorytet, to odpowiadamy komunikatem ACK.
+    3. Jeśli dostaniemy komunikat COME, to proces przechodzi do stanu WAIT.
+4. Proces przechodzi do stanu DECIDE.
+
+Możliwe komunikaty wyjściowe:
+- WANT
+- ACK
+Możliwe komunikaty wejściowe:
+- WANT: zapisujemy do WaitQueue
+- ACK
+
+## Stan DECIDE:
+1. Wysyłamy do wszystkich procesów komunikat OCCUPIED z id polany `i`
+2. Proces ustawia zmienną IsLeader = true
+3. Decydujemy kto wejdzie na polanę zależnie od pojemności polany i wysyłamy komunikat COME do tych procesów (procesy z WaitQueue).
+4. Wysyłamy do wszystkich procesów na imprezie komunikat START
+5. Przechodzimy do stanu PARTY
+
+Możliwe komunikaty wyjściowe:
+- COME
+- START
+- OCCUPIED
+Możliwe komunikaty wejściowe:
+- WANT: zapisujemy do WaitQueue
+
+## Stan WAIT:
+1. Proces czeka na komunikat START
+2. Proces przechodzi do stanu PARTY
+
+Możliwe komunikaty wejściowe:
+- START
+- WANT: zapisujemy do WaitQueue
+
+## Stan PARTY:
+1. Proces czeka losową ilość czasu (1s-10s) i jeśli dostanie komunikat o prośbie wejścia na polanę to zapisuje do WaitQueue
+2. Proces, który ma zmienną IsLeader == true wysyła do wszystkich procesów komunikat FREE z id polany `i`
+3. Proces wysyła do procesów z kolejki WaitQueue komunikat ACK
+3. Proces przechodzi do stanu THINK
+
+Możliwe komunikaty wyjściowe:
+- FREE
+- ACK
+Możliwe komunikaty wejściowe:
+- WANT: zapisujemy do WaitQueue
+
+# Triggery
+Komunikaty obsługiwane w każdym stanie:
+- OCCUPIED: ustawia Meadows[i] = true
+- FREE: ustawia Meadows[i] = false
+- TYPE (poza stanem INIT): ustawia Types[i] na odpowiedni typ i odsyła z powrotem do adresata oryginalnej wiadomości swój typ
