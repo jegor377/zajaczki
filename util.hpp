@@ -1,8 +1,17 @@
 #pragma once
 
+#include "mpi_header.hpp"
+
+#include <string>
+
+#define NITEMS 3
+
+MPI_Datatype MPI_PACKET_T;
+
 typedef struct {
     int ts;
     int src;
+    int value;
 
     bool operator<(const packet_t& other) const {
         return ts < other.ts;
@@ -17,12 +26,13 @@ enum State
     WANT,
     DECIDE,
     WAIT,
-    PARTY
+    PARTY,
+    FINISH // nigdy się nie wydarzy
 };
 
 enum ProcessType
 {
-    UNDEFINED,
+    UNDEFINED = -1,
     HARE,
     BEAR
 };
@@ -37,3 +47,6 @@ enum PacketType
     OCCUPIED,
     FREE
 };
+
+void init_packet_type();
+std::string tag2string(enum PacketType tag);
